@@ -1,1 +1,4 @@
-python-2.7.13
+json
+socket
+flask
+requests

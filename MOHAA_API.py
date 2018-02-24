@@ -1,79 +1,34 @@
-import exceptions
 import json
 import socket
-from datetime import timedelta
-from functools import update_wrapper
-import requests
-from flask import Flask, request, jsonify, make_response, current_app
+from flask import Flask, request, make_response
+from flask_cors import CORS, cross_origin
+
 
 app = Flask(__name__)
-
-## Allow crossdomainrequests
-def crossdomain(origin=None, methods=None, headers=None,
-                max_age=21600, attach_to_all=True,
-                automatic_options=True):
-    if methods is not None:
-        methods = ', '.join(sorted(x.upper() for x in methods))
-    if headers is not None and not isinstance(headers, basestring):
-        headers = ', '.join(x.upper() for x in headers)
-    if not isinstance(origin, basestring):
-        origin = ', '.join(origin)
-    if isinstance(max_age, timedelta):
-        max_age = max_age.total_seconds()
-
-    def get_methods():
-        if methods is not None:
-            return methods
-
-        options_resp = current_app.make_default_options_response()
-        return options_resp.headers['allow']
-
-    def decorator(f):
-        def wrapped_function(*args, **kwargs):
-            if automatic_options and request.method == 'OPTIONS':
-                resp = current_app.make_default_options_response()
-            else:
-                resp = make_response(f(*args, **kwargs))
-            if not attach_to_all and request.method != 'OPTIONS':
-                return resp
-
-            h = resp.headers
-
-            h['Access-Control-Allow-Origin'] = origin
-            h['Access-Control-Allow-Methods'] = get_methods()
-            h['Access-Control-Max-Age'] = str(max_age)
-            if headers is not None:
-                h['Access-Control-Allow-Headers'] = headers
-            return resp
-
-        f.provide_automatic_options = False
-        return update_wrapper(wrapped_function, f)
-    return decorator
+cors = CORS(app, resources={r'/*': {"origins": '*'}})
 
 #RCON
 def rcon(ip, port, password, command):
-    try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.settimeout(0.8)
-        sock.connect((ip, port))
+        sock.connect((ip, int(port)))
 
-        sock.send("\xFF\xFF\xFF\xFF\x02rcon " + password + " " + command)
+        sock.send(b"\xFF\xFF\xFF\xFF\x02rcon " + str.encode(password) + b" " + str.encode(command))
         received = sock.recv(65565)
         return received
         sock.close()
-    except Exception as e:
-        return "Couldn't connect to the host."
-        sock.close()
 
 #Handle RCON requests
-@app.route('/rcon', methods=['POST'])
-@crossdomain(origin='*')
+@app.route('/rcon',methods=['GET', 'POST'])
+@cross_origin(allow_headers=['Content-Type'])
 def handle_req():
     if request.headers['Content-Type'] == 'application/json':
         data = request.get_json()
-        result = rcon(data["ip"].encode('utf-8'), data["port"], data["password"].encode("utf-8"), data["command"].encode('utf-8'))
-        resultSplitted = result.splitlines()
-        r = make_response(json.dumps(resultSplitted, ensure_ascii=False, encoding="utf-8"))
+        result = rcon(data["ip"], data["port"], data["password"], data["command"])
+        test = result.replace(b'\xff\xff\xff\xff\x01', b'')
+        bytesToJson = test.decode('utf8')
+        resultSplitted = bytesToJson.splitlines()
+        r = make_response(json.dumps(resultSplitted))
         r.mimetype = 'application/json'
         return r
     else:
@@ -83,6 +38,7 @@ def handle_req():
 
 #Main URI
 @app.route('/')
+@cross_origin(allow_headers=['Content-Type'])
 def main():
         return "Choo choo, nothing to see here!"
 
